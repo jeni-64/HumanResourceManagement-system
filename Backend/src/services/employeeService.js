@@ -1,321 +1,413 @@
-const { PrismaClient } = require('@prisma/client');
-const { AppError, NotFoundError } = require('../utils/errors');
-const { createAuditLog } = require('../middleware/auditMiddleware');
+import { PrismaClient } from '@prisma/client';
+import { AppError, NotFoundError, ValidationError } from '../utils/errors.js';
+import { createAuditLog } from '../middleware/auditMiddleware.js';
+import logger from '../utils/logger.js';
 
 const prisma = new PrismaClient();
 
-const employeeService = {
-  async getAllEmployees({ page, limit, search, departmentId, employmentStatus, user }) {
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    const where = {
-      AND: [
-        search ? { 
-          OR: [
-            { firstName: { contains: search, mode: 'insensitive' } }, 
-            { lastName: { contains: search, mode: 'insensitive' } }, 
-            { email: { contains: search, mode: 'insensitive' } },
-            { employeeId: { contains: search, mode: 'insensitive' } }
-          ] 
-        } : {},
-        departmentId ? { departmentId } : {},
-        employmentStatus ? { employmentStatus } : {},
-        user.role === 'MANAGER' ? { 
-          OR: [
-            { managerId: user.employee?.id }, 
-            { id: user.employee?.id }
-          ] 
-        } : {},
-      ],
-    };
+// Utility functions for employee service
+const validateEmployeeData = async (data, isUpdate = false) => {
+  const { employeeId, email, departmentId, positionId, managerId } = data;
+
+  // Check for existing employee ID (only for create or if employeeId is being changed)
+  if (!isUpdate && employeeId) {
+    const existingEmployee = await prisma.employee.findUnique({
+      where: { employeeId }
+    });
+    if (existingEmployee) {
+      throw new ValidationError('Employee ID already exists', null, 'DUPLICATE_EMPLOYEE_ID');
+    }
+  }
+
+  // Check for existing email (only for create or if email is being changed)
+  if (email) {
+    const existingEmail = await prisma.employee.findUnique({
+      where: { email }
+    });
+    if (existingEmail && (!isUpdate || existingEmail.id !== data.id)) {
+      throw new ValidationError('Email already exists', null, 'DUPLICATE_EMAIL');
+    }
+  }
+
+  // Validate department exists if provided
+  if (departmentId) {
+    const department = await prisma.department.findUnique({
+      where: { id: departmentId, isActive: true },
+    });
+    if (!department) {
+      throw new ValidationError('Department not found or inactive', null, 'DEPARTMENT_NOT_FOUND');
+    }
+  }
+
+  // Validate position exists if provided
+  if (positionId) {
+    const position = await prisma.position.findUnique({
+      where: { id: positionId, isActive: true },
+    });
+    if (!position) {
+      throw new ValidationError('Position not found or inactive', null, 'POSITION_NOT_FOUND');
+    }
+  }
+
+  // Validate manager exists if provided
+  if (managerId) {
+    const manager = await prisma.employee.findUnique({
+      where: { id: managerId, employmentStatus: 'ACTIVE' },
+    });
+    if (!manager) {
+      throw new ValidationError('Manager not found or inactive', null, 'MANAGER_NOT_FOUND');
+    }
+  }
+};
+
+const buildEmployeeFilters = (user, filters = {}) => {
+  const { search, departmentId, employmentStatus, employmentType } = filters;
+  
+  const where = {
+    AND: [
+      search ? {
+        OR: [
+          { firstName: { contains: search, mode: 'insensitive' } },
+          { lastName: { contains: search, mode: 'insensitive' } },
+          { email: { contains: search, mode: 'insensitive' } },
+          { employeeId: { contains: search, mode: 'insensitive' } },
+        ]
+      } : {},
+      departmentId ? { departmentId } : {},
+      employmentStatus ? { employmentStatus } : {},
+      employmentType ? { employmentType } : {},
+    ],
+  };
+
+  // Apply role-based filtering for managers
+  if (user.role === 'MANAGER' && user.employee) {
+    where.AND.push({
+      OR: [
+        { managerId: user.employee.id }, // Subordinates
+        { id: user.employee.id }         // Self
+      ]
+    });
+  }
+
+  return where;
+};
+
+const formatEmployeeData = (data) => {
+  const formattedData = { ...data };
+  
+  // Convert date strings to Date objects
+  if (data.dateOfBirth) {
+    formattedData.dateOfBirth = new Date(data.dateOfBirth);
+  }
+  if (data.hireDate) {
+    formattedData.hireDate = new Date(data.hireDate);
+  }
+  if (data.probationEndDate) {
+    formattedData.probationEndDate = new Date(data.probationEndDate);
+  }
+  if (data.terminationDate) {
+    formattedData.terminationDate = new Date(data.terminationDate);
+  }
+
+  return formattedData;
+};
+
+// Employee service functions
+const getAllEmployees = async ({ page, limit, search, departmentId, employmentStatus, employmentType, user }) => {
+  try {
+    const skip = (page - 1) * limit;
+    const where = buildEmployeeFilters(user, { search, departmentId, employmentStatus, employmentType });
 
     const [employees, total] = await Promise.all([
       prisma.employee.findMany({
         where,
         skip,
-        take: parseInt(limit),
-        select: {
-          id: true,
-          employeeId: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-          phone: true,
-          department: { select: { id: true, name: true } },
-          position: { select: { id: true, title: true } },
-          manager: { select: { id: true, firstName: true, lastName: true } },
-          employmentStatus: true,
-          employmentType: true,
-          hireDate: true,
-          createdAt: true,
+        take: limit,
+        orderBy: { firstName: 'asc' },
+        include: {
+          department: {
+            select: { id: true, name: true },
+          },
+          position: {
+            select: { id: true, title: true, level: true },
+          },
+          manager: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+          user: {
+            select: { id: true, email: true, role: true, isActive: true },
+          },
         },
-        orderBy: { createdAt: 'desc' },
       }),
       prisma.employee.count({ where }),
     ]);
 
-    return { 
-      employees, 
-      pagination: { 
-        page: parseInt(page), 
-        limit: parseInt(limit), 
-        total, 
-        pages: Math.ceil(total / parseInt(limit)) 
-      } 
+    return {
+      employees,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
+      }
     };
-  },
+  } catch (error) {
+    logger.error('Error in getAllEmployees service', { error: error.message });
+    throw new AppError('Failed to fetch employees', 500, null, 'SERVER_ERROR');
+  }
+};
 
-  async getEmployee(id, user) {
-    const where = { id };
+const getEmployee = async (id, user) => {
+  try {
+    // Build access control query
+    let where = { id };
     
-    // If user is a manager, only allow access to their subordinates or themselves
-    if (user.role === 'MANAGER') {
+    // Apply role-based access control
+    if (user.role === 'MANAGER' && user.employee) {
       const managerCheck = await prisma.employee.findFirst({
         where: {
           id,
           OR: [
-            { managerId: user.employee?.id }, 
-            { id: user.employee?.id }
+            { managerId: user.employee.id }, // Subordinate
+            { id: user.employee.id }         // Self
           ]
         }
       });
+      
       if (!managerCheck) {
+        throw new NotFoundError('Employee not found or unauthorized');
+      }
+    } else if (user.role === 'EMPLOYEE' && user.employee) {
+      // Employees can only view their own profile
+      if (id !== user.employee.id) {
         throw new NotFoundError('Employee not found or unauthorized');
       }
     }
 
     const employee = await prisma.employee.findUnique({
       where,
-      select: {
-        id: true,
-        employeeId: true,
-        firstName: true,
-        lastName: true,
-        middleName: true,
-        email: true,
-        phone: true,
-        dateOfBirth: true,
-        gender: true,
-        maritalStatus: true,
-        nationality: true,
-        address: true,
-        city: true,
-        state: true,
-        country: true,
-        zipCode: true,
-        emergencyContactName: true,
-        emergencyContactPhone: true,
-        emergencyContactRelation: true,
-        department: { 
+      include: {
+        department: {
           select: { 
             id: true, 
             name: true,
             manager: { select: { id: true, firstName: true, lastName: true } }
-          } 
+          },
         },
-        position: { 
+        position: {
           select: { 
             id: true, 
             title: true, 
+            level: true, 
             description: true,
             minSalary: true,
             maxSalary: true
-          } 
+          },
         },
-        manager: { select: { id: true, firstName: true, lastName: true, email: true } },
-        subordinates: { 
-          select: { id: true, firstName: true, lastName: true, employeeId: true },
-          where: { employmentStatus: 'ACTIVE' }
+        manager: {
+          select: { id: true, firstName: true, lastName: true, email: true },
         },
-        employmentType: true,
-        employmentStatus: true,
-        hireDate: true,
-        probationEndDate: true,
-        terminationDate: true,
-        terminationReason: true,
-        baseSalary: true,
-        currency: true,
-        profilePicture: true,
-        bio: true,
-        skills: true,
-        qualifications: true,
-        createdAt: true,
-        updatedAt: true,
+        subordinates: {
+          select: { 
+            id: true, 
+            firstName: true, 
+            lastName: true, 
+            employeeId: true,
+            position: { select: { title: true } }
+          },
+          where: { employmentStatus: 'ACTIVE' },
+        },
+        user: {
+          select: { 
+            id: true, 
+            email: true, 
+            role: true, 
+            isActive: true, 
+            lastLoginAt: true 
+          },
+        },
+        attendanceRecords: {
+          select: { 
+            id: true, 
+            date: true, 
+            status: true, 
+            checkIn: true, 
+            checkOut: true,
+            hoursWorked: true
+          },
+          orderBy: { date: 'desc' },
+          take: 10,
+        },
+        leaveRequests: {
+          select: { 
+            id: true, 
+            startDate: true, 
+            endDate: true, 
+            days: true,
+            status: true,
+            policy: { select: { name: true, leaveType: true } }
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+        },
       },
     });
 
     if (!employee) {
-      throw new NotFoundError('Employee not found or unauthorized');
+      throw new NotFoundError('Employee not found');
     }
 
     return employee;
-  },
-
-  async createEmployee(data, req) {
-    const { employeeId, email, departmentId, positionId, managerId } = data;
-
-    // Check for existing employee ID or email
-    const existing = await prisma.employee.findFirst({ 
-      where: { 
-        OR: [
-          { employeeId }, 
-          { email }
-        ] 
-      } 
-    });
-    if (existing) {
-      throw new AppError('Employee ID or email already exists', 409);
+  } catch (error) {
+    if (error instanceof NotFoundError) {
+      throw error;
     }
+    logger.error('Error in getEmployee service', { error: error.message, employeeId: id });
+    throw new AppError('Failed to fetch employee', 500, null, 'SERVER_ERROR');
+  }
+};
 
-    // Validate department exists
-    if (departmentId) {
-      const dept = await prisma.department.findUnique({ 
-        where: { id: departmentId, isActive: true } 
-      });
-      if (!dept) {
-        throw new AppError('Department not found or inactive', 400);
-      }
-    }
+const createEmployee = async (data, req) => {
+  try {
+    // Validate employee data
+    await validateEmployeeData(data);
 
-    // Validate position exists
-    if (positionId) {
-      const pos = await prisma.position.findUnique({ 
-        where: { id: positionId, isActive: true } 
-      });
-      if (!pos) {
-        throw new AppError('Position not found or inactive', 400);
-      }
-    }
+    const formattedData = formatEmployeeData(data);
 
-    // Validate manager exists
-    if (managerId) {
-      const mgr = await prisma.employee.findUnique({ 
-        where: { id: managerId, employmentStatus: 'ACTIVE' } 
-      });
-      if (!mgr) {
-        throw new AppError('Manager not found or inactive', 400);
-      }
-    }
-
-    const employee = await prisma.employee.create({
+    const newEmployee = await prisma.employee.create({
       data: {
-        ...data,
+        ...formattedData,
         createdById: req.user.id,
         updatedById: req.user.id,
-        hireDate: new Date(data.hireDate),
-        dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
-        probationEndDate: data.probationEndDate ? new Date(data.probationEndDate) : undefined,
       },
-      select: { 
-        id: true, 
-        employeeId: true, 
-        firstName: true, 
-        lastName: true, 
-        email: true, 
-        hireDate: true,
-        employmentStatus: true,
+      include: {
         department: { select: { id: true, name: true } },
-        position: { select: { id: true, title: true } }
+        position: { select: { id: true, title: true, level: true } },
+        manager: { select: { id: true, firstName: true, lastName: true } },
       },
     });
 
-    await createAuditLog(req.user.id, 'CREATE', 'employees', employee.id, null, employee, req);
+    await createAuditLog(req.user.id, 'CREATE', 'employees', newEmployee.id, null, newEmployee, req);
     
-    return employee;
-  },
+    logger.info('Employee created in service', { employeeId: newEmployee.id });
+    
+    return newEmployee;
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      throw error;
+    }
+    logger.error('Error in createEmployee service', { error: error.message });
+    throw new AppError('Failed to create employee', 500, null, 'SERVER_ERROR');
+  }
+};
 
-  async updateEmployee(id, data, req) {
-    const existing = await prisma.employee.findUnique({ where: { id } });
-    if (!existing) {
+const updateEmployee = async (id, data, req) => {
+  try {
+    const existingEmployee = await prisma.employee.findUnique({ where: { id } });
+    if (!existingEmployee) {
       throw new NotFoundError('Employee not found');
     }
 
-    // Check email uniqueness if email is being updated
-    if (data.email && data.email !== existing.email) {
-      const emailExists = await prisma.employee.findUnique({ where: { email: data.email } });
-      if (emailExists) {
-        throw new AppError('Email already exists', 409);
-      }
-    }
+    // Validate update data
+    await validateEmployeeData({ ...data, id }, true);
 
-    // Validate department if being updated
-    if (data.departmentId) {
-      const dept = await prisma.department.findUnique({ 
-        where: { id: data.departmentId, isActive: true } 
-      });
-      if (!dept) {
-        throw new AppError('Department not found or inactive', 400);
-      }
-    }
+    const formattedData = formatEmployeeData(data);
 
-    // Validate position if being updated
-    if (data.positionId) {
-      const pos = await prisma.position.findUnique({ 
-        where: { id: data.positionId, isActive: true } 
-      });
-      if (!pos) {
-        throw new AppError('Position not found or inactive', 400);
-      }
-    }
-
-    // Validate manager if being updated
-    if (data.managerId) {
-      const mgr = await prisma.employee.findUnique({ 
-        where: { id: data.managerId, employmentStatus: 'ACTIVE' } 
-      });
-      if (!mgr) {
-        throw new AppError('Manager not found or inactive', 400);
-      }
-      
-      // Prevent self-management
-      if (data.managerId === id) {
-        throw new AppError('Employee cannot be their own manager', 400);
-      }
-    }
-
-    // Convert date strings to Date objects
-    const updateData = { ...data, updatedById: req.user.id };
-    if (data.dateOfBirth) updateData.dateOfBirth = new Date(data.dateOfBirth);
-    if (data.hireDate) updateData.hireDate = new Date(data.hireDate);
-    if (data.probationEndDate) updateData.probationEndDate = new Date(data.probationEndDate);
-    if (data.terminationDate) updateData.terminationDate = new Date(data.terminationDate);
-
-    const employee = await prisma.employee.update({
+    const updatedEmployee = await prisma.employee.update({
       where: { id },
-      data: updateData,
-      select: { 
-        id: true, 
-        employeeId: true, 
-        firstName: true, 
-        lastName: true, 
-        email: true, 
-        employmentStatus: true,
+      data: {
+        ...formattedData,
+        updatedById: req.user.id,
+      },
+      include: {
         department: { select: { id: true, name: true } },
-        position: { select: { id: true, title: true } },
-        updatedAt: true
+        position: { select: { id: true, title: true, level: true } },
+        manager: { select: { id: true, firstName: true, lastName: true } },
       },
     });
 
-    await createAuditLog(req.user.id, 'UPDATE', 'employees', id, existing, employee, req);
+    await createAuditLog(req.user.id, 'UPDATE', 'employees', id, existingEmployee, updatedEmployee, req);
     
-    return employee;
-  },
+    logger.info('Employee updated in service', { employeeId: id });
+    
+    return updatedEmployee;
+  } catch (error) {
+    if (error instanceof NotFoundError || error instanceof ValidationError) {
+      throw error;
+    }
+    logger.error('Error in updateEmployee service', { error: error.message, employeeId: id });
+    throw new AppError('Failed to update employee', 500, null, 'SERVER_ERROR');
+  }
+};
 
-  async deleteEmployee(id, req) {
-    const employee = await prisma.employee.findUnique({ where: { id } });
-    if (!employee) {
+const deleteEmployee = async (id, req) => {
+  try {
+    const existingEmployee = await prisma.employee.findUnique({
+      where: { id },
+      include: {
+        subordinates: {
+          where: { employmentStatus: 'ACTIVE' },
+          select: { id: true, firstName: true, lastName: true },
+        },
+      },
+    });
+
+    if (!existingEmployee) {
       throw new NotFoundError('Employee not found');
+    }
+
+    if (existingEmployee.employmentStatus === 'TERMINATED') {
+      throw new ValidationError('Employee is already terminated', null, 'ALREADY_TERMINATED');
+    }
+
+    // Check if employee has active subordinates
+    if (existingEmployee.subordinates.length > 0) {
+      throw new ValidationError(
+        'Cannot terminate employee with active subordinates. Please reassign subordinates first.',
+        null,
+        'HAS_ACTIVE_SUBORDINATES'
+      );
     }
 
     // Soft delete by updating employment status
-    const updatedEmployee = await prisma.employee.update({ 
-      where: { id }, 
-      data: { 
+    const terminatedEmployee = await prisma.employee.update({
+      where: { id },
+      data: {
         employmentStatus: 'TERMINATED',
         terminationDate: new Date(),
-        updatedById: req.user.id 
-      } 
+        updatedById: req.user.id,
+      },
     });
 
-    await createAuditLog(req.user.id, 'DELETE', 'employees', id, employee, updatedEmployee, req);
-  },
+    // Also deactivate associated user account if exists
+    if (existingEmployee.userId) {
+      await prisma.user.update({
+        where: { id: existingEmployee.userId },
+        data: { isActive: false },
+      });
+    }
+
+    await createAuditLog(req.user.id, 'DELETE', 'employees', id, existingEmployee, terminatedEmployee, req);
+    
+    logger.info('Employee terminated in service', { employeeId: id });
+    
+    return terminatedEmployee;
+  } catch (error) {
+    if (error instanceof NotFoundError || error instanceof ValidationError) {
+      throw error;
+    }
+    logger.error('Error in deleteEmployee service', { error: error.message, employeeId: id });
+    throw new AppError('Failed to delete employee', 500, null, 'SERVER_ERROR');
+  }
 };
+
+// Export service functions
+export const employeeService = {
+  getAllEmployees,
+  getEmployee,
+  createEmployee,
+  updateEmployee,
+  deleteEmployee,
+};
+
+export default employeeService;

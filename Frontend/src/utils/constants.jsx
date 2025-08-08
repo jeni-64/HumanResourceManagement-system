@@ -3,7 +3,7 @@ export const API_CONFIG = {
   BASE_URL: import.meta.env.VITE_API_URL || 'http://localhost:3000/api',
   TIMEOUT: 30000, // 30 seconds
   RETRY_ATTEMPTS: 3,
-}
+};
 
 // User Roles
 export const USER_ROLES = {
@@ -11,7 +11,7 @@ export const USER_ROLES = {
   HR: 'HR',
   MANAGER: 'MANAGER',
   EMPLOYEE: 'EMPLOYEE',
-}
+};
 
 // Employment Types
 export const EMPLOYMENT_TYPES = {
@@ -20,7 +20,7 @@ export const EMPLOYMENT_TYPES = {
   CONTRACT: 'CONTRACT',
   INTERN: 'INTERN',
   CONSULTANT: 'CONSULTANT',
-}
+};
 
 // Employment Status
 export const EMPLOYMENT_STATUS = {
@@ -29,7 +29,7 @@ export const EMPLOYMENT_STATUS = {
   TERMINATED: 'TERMINATED',
   ON_LEAVE: 'ON_LEAVE',
   PROBATION: 'PROBATION',
-}
+};
 
 // Leave Types
 export const LEAVE_TYPES = {
@@ -40,7 +40,7 @@ export const LEAVE_TYPES = {
   EMERGENCY: 'EMERGENCY',
   UNPAID: 'UNPAID',
   SABBATICAL: 'SABBATICAL',
-}
+};
 
 // Leave Status
 export const LEAVE_STATUS = {
@@ -48,7 +48,7 @@ export const LEAVE_STATUS = {
   APPROVED: 'APPROVED',
   REJECTED: 'REJECTED',
   CANCELLED: 'CANCELLED',
-}
+};
 
 // Attendance Status
 export const ATTENDANCE_STATUS = {
@@ -57,7 +57,7 @@ export const ATTENDANCE_STATUS = {
   LATE: 'LATE',
   HALF_DAY: 'HALF_DAY',
   WORK_FROM_HOME: 'WORK_FROM_HOME',
-}
+};
 
 // Payroll Status
 export const PAYROLL_STATUS = {
@@ -65,7 +65,7 @@ export const PAYROLL_STATUS = {
   PROCESSED: 'PROCESSED',
   PAID: 'PAID',
   CANCELLED: 'CANCELLED',
-}
+};
 
 // Performance Ratings
 export const PERFORMANCE_RATINGS = {
@@ -74,14 +74,14 @@ export const PERFORMANCE_RATINGS = {
   MEETS_EXPECTATIONS: 'MEETS_EXPECTATIONS',
   BELOW_EXPECTATIONS: 'BELOW_EXPECTATIONS',
   UNSATISFACTORY: 'UNSATISFACTORY',
-}
+};
 
 // Gender Options
 export const GENDER_OPTIONS = {
   MALE: 'MALE',
   FEMALE: 'FEMALE',
   OTHER: 'OTHER',
-}
+};
 
 // Marital Status Options
 export const MARITAL_STATUS = {
@@ -89,7 +89,7 @@ export const MARITAL_STATUS = {
   MARRIED: 'MARRIED',
   DIVORCED: 'DIVORCED',
   WIDOWED: 'WIDOWED',
-}
+};
 
 // Document Types
 export const DOCUMENT_TYPES = {
@@ -104,7 +104,7 @@ export const DOCUMENT_TYPES = {
   CONTRACT: 'CONTRACT',
   POLICY: 'POLICY',
   OTHER: 'OTHER',
-}
+};
 
 // Date Formats
 export const DATE_FORMATS = {
@@ -112,14 +112,14 @@ export const DATE_FORMATS = {
   INPUT: 'yyyy-MM-dd',
   DATETIME: 'MMM dd, yyyy HH:mm',
   TIME: 'HH:mm',
-}
+};
 
 // Pagination
 export const PAGINATION = {
   DEFAULT_PAGE_SIZE: 10,
   PAGE_SIZE_OPTIONS: [10, 25, 50, 100],
   MAX_PAGE_SIZE: 100,
-}
+};
 
 // Local Storage Keys
 export const STORAGE_KEYS = {
@@ -127,7 +127,7 @@ export const STORAGE_KEYS = {
   REFRESH_TOKEN: 'refreshToken',
   USER_PREFERENCES: 'userPreferences',
   THEME: 'theme',
-}
+};
 
 // Error Messages
 export const ERROR_MESSAGES = {
@@ -138,7 +138,7 @@ export const ERROR_MESSAGES = {
   SERVER_ERROR: 'An unexpected error occurred. Please try again.',
   VALIDATION_ERROR: 'Please check your input and try again.',
   SESSION_EXPIRED: 'Your session has expired. Please log in again.',
-}
+};
 
 // Success Messages
 export const SUCCESS_MESSAGES = {
@@ -148,7 +148,7 @@ export const SUCCESS_MESSAGES = {
   UPDATE: 'Updated successfully!',
   DELETE: 'Deleted successfully!',
   SAVE: 'Saved successfully!',
-}
+};
 
 // Validation Rules
 export const VALIDATION_RULES = {
@@ -167,7 +167,7 @@ export const VALIDATION_RULES = {
   REQUIRED: {
     MESSAGE: 'This field is required',
   },
-}
+};
 
 // Theme Colors
 export const THEME_COLORS = {
@@ -183,7 +183,7 @@ export const THEME_COLORS = {
     800: '#1e40af',
     900: '#1e3a8a',
   },
-}
+};
 
 // Chart Colors
 export const CHART_COLORS = [
@@ -195,7 +195,7 @@ export const CHART_COLORS = [
   '#06b6d4', // cyan
   '#84cc16', // lime
   '#f97316', // orange
-]
+];
 
 // File Upload
 export const FILE_UPLOAD = {
@@ -209,7 +209,7 @@ export const FILE_UPLOAD = {
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   ],
   ALLOWED_EXTENSIONS: ['.jpg', '.jpeg', '.png', '.gif', '.pdf', '.doc', '.docx'],
-}
+};
 
 // Time Zones
 export const TIME_ZONES = [
@@ -218,7 +218,7 @@ export const TIME_ZONES = [
   { value: 'America/Denver', label: 'Mountain Time (MT)' },
   { value: 'America/Los_Angeles', label: 'Pacific Time (PT)' },
   { value: 'UTC', label: 'Coordinated Universal Time (UTC)' },
-]
+];
 
 // Countries
 export const COUNTRIES = [
@@ -232,7 +232,35 @@ export const COUNTRIES = [
   { value: 'JP', label: 'Japan' },
   { value: 'CN', label: 'China' },
   { value: 'BR', label: 'Brazil' },
-]
+];
+
+// Employee Form Steps
+export const EMPLOYEE_FORM_STEPS = [
+  {
+    id: 1,
+    title: 'Basic Information',
+    description: 'Personal details and contact information',
+    fields: ['employeeId', 'firstName', 'lastName', 'email', 'phone']
+  },
+  {
+    id: 2,
+    title: 'Personal Details',
+    description: 'Additional personal information',
+    fields: ['middleName', 'dateOfBirth', 'gender', 'maritalStatus', 'nationality']
+  },
+  {
+    id: 3,
+    title: 'Employment Information',
+    description: 'Job details and organizational structure',
+    fields: ['departmentId', 'positionId', 'managerId', 'employmentType', 'hireDate', 'baseSalary']
+  },
+  {
+    id: 4,
+    title: 'Address & Emergency Contact',
+    description: 'Address and emergency contact details',
+    fields: ['address', 'city', 'state', 'country', 'zipCode', 'emergencyContactName', 'emergencyContactPhone', 'emergencyContactRelation']
+  }
+];
 
 export default {
   API_CONFIG,
@@ -258,4 +286,5 @@ export default {
   FILE_UPLOAD,
   TIME_ZONES,
   COUNTRIES,
-}
+  EMPLOYEE_FORM_STEPS,
+};
