@@ -84,7 +84,7 @@ const idSchema = z.object({
 router.get(
   '/',
   authenticate,
-  authorize(['ADMIN', 'HR', 'MANAGER']),
+  authorize('ADMIN', 'HR', 'MANAGER'),
   validate(listSchema),
   async (req, res, next) => {
     try {
@@ -106,7 +106,8 @@ router.get(
       }
 
       // Role-based filtering for managers
-      if (req.user.role === 'MANAGER' && req.user.employee) {
+      const userRole = req.user.role.toUpperCase();
+      if (userRole === 'MANAGER' && req.user.employee) {
         const subordinates = await prisma.employee.findMany({
           where: { managerId: req.user.employee.id },
           select: { id: true },
@@ -170,7 +171,7 @@ router.get(
 router.get(
   '/:id',
   authenticate,
-  authorize(['ADMIN', 'HR', 'MANAGER', 'EMPLOYEE']),
+  authorize('ADMIN', 'HR', 'MANAGER', 'EMPLOYEE'),
   authorizeEmployee,
   validate(idSchema),
   async (req, res, next) => {
@@ -194,7 +195,7 @@ router.get(
             where: { employmentStatus: 'ACTIVE' },
           },
           user: {
-            select: { id: true, email: true, role: true, isActive: true, lastLogin: true },
+            select: { id: true, email: true, role: true, isActive: true, lastLoginAt: true },
           },
           attendanceRecords: {
             select: { id: true, date: true, status: true },
@@ -202,7 +203,7 @@ router.get(
             take: 10,
           },
           leaveRequests: {
-            select: { id: true, leaveType: true, startDate: true, endDate: true, status: true },
+            select: { id: true, startDate: true, endDate: true, status: true, policy: { select: { name: true, leaveType: true } } },
             orderBy: { createdAt: 'desc' },
             take: 5,
           },
@@ -230,7 +231,7 @@ router.get(
 router.post(
   '/',
   authenticate,
-  authorize(['ADMIN', 'HR']),
+  authorize('ADMIN', 'HR'),
   validate(employeeSchema),
   async (req, res, next) => {
     try {
@@ -314,7 +315,7 @@ router.post(
 router.put(
   '/:id',
   authenticate,
-  authorize(['ADMIN', 'HR']),
+  authorize('ADMIN', 'HR'),
   validate(idSchema.merge(updateEmployeeSchema)),
   async (req, res, next) => {
     try {
@@ -408,7 +409,7 @@ router.put(
 router.delete(
   '/:id',
   authenticate,
-  authorize(['ADMIN', 'HR']),
+  authorize('ADMIN', 'HR'),
   validate(idSchema),
   async (req, res, next) => {
     try {
@@ -451,10 +452,12 @@ router.delete(
       });
 
       // Also deactivate associated user account if exists
-      await prisma.user.updateMany({
-        where: { employee: { id } },
-        data: { isActive: false },
-      });
+      if (existingEmployee.userId) {
+        await prisma.user.update({
+          where: { id: existingEmployee.userId },
+          data: { isActive: false },
+        });
+      }
 
       await createAuditLog(req.user.id, 'DELETE', 'employees', id, existingEmployee, terminatedEmployee, req);
       res.json({ 

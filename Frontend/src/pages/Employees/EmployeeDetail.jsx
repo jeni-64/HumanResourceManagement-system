@@ -19,6 +19,7 @@ import Modal from '../../components/UI/Modal';
 import Alert from '../../components/UI/Alert';
 import { useAuth } from '../../contexts/AuthContext';
 import { format } from 'date-fns';
+import { cn } from '../../utils/cn';
 import toast from 'react-hot-toast';
 
 const EmployeeDetail = () => {

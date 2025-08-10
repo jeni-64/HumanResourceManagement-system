@@ -41,7 +41,7 @@ router.post('/register', validate(authSchemas.register), async (req, res, next) 
 
     // Create user
     const user = await prisma.user.create({
-      data: { email, password: hashedPassword, role },
+      data: { email, password: hashedPassword, role: role.toUpperCase() },
       select: { id: true, email: true, role: true, isActive: true, createdAt: true }
     });
 
@@ -119,12 +119,22 @@ router.post('/login', validate(authSchemas.login), async (req, res, next) => {
     // Remove password
     delete user.password;
 
+    logger.info('User logged in successfully', { 
+      userId: user.id, 
+      role: user.role, 
+      email: user.email 
+    });
+
     res.json({
       status: 'success',
       message: 'Login successful',
       data: { user, accessToken, refreshToken }
     });
   } catch (error) {
+    logger.error('Login error', { 
+      error: error.message, 
+      email: req.validatedData?.body?.email 
+    });
     next(error);
   }
 });

@@ -27,8 +27,8 @@ const authenticate = async (req, res, next) => {
     const token = authHeader.split(' ')[1];
     const decoded = verifyAccessToken(token);
 
-    // Make sure model casing matches your Prisma schema
-    const user = await prisma.User.findUnique({
+    // Use correct model casing from Prisma schema
+    const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
       select: {
         id: true,
@@ -50,7 +50,8 @@ const authenticate = async (req, res, next) => {
       throw new AuthenticationError('User not found or inactive', null, 'USER_NOT_FOUND');
     }
 
-    req.user = { ...user, role: decoded.role };
+    // Use the role from database, not from token
+    req.user = { ...user };
     logger.info('User authenticated', { userId: user.id, role: user.role, url: req.originalUrl });
     next();
   } catch (error) {
@@ -67,7 +68,11 @@ const authorize = (...roles) => {
       return next(new AuthenticationError('Authentication required', null, 'AUTH_REQUIRED'));
     }
 
-    if (!roles.includes(req.user.role)) {
+    // Ensure roles are in uppercase to match database
+    const normalizedRoles = roles.map(role => role.toUpperCase());
+    const userRole = req.user.role.toUpperCase();
+
+    if (!normalizedRoles.includes(userRole)) {
       logger.error('Insufficient permissions', { userId: req.user.id, role: req.user.role, url: req.originalUrl });
       return next(new AuthorizationError('Insufficient permissions', null, 'INSUFFICIENT_PERMISSIONS'));
     }
@@ -91,12 +96,14 @@ const authorizeEmployee = async (req, res, next) => {
       throw new AuthenticationError('Authentication required', null, 'AUTH_REQUIRED');
     }
 
-    if (['ADMIN', 'HR'].includes(req.user.role)) {
+    const userRole = req.user.role.toUpperCase();
+    
+    if (['ADMIN', 'HR'].includes(userRole)) {
       return next();
     }
 
-    if (req.user.role === 'MANAGER' && req.user.employee) {
-      const subordinates = await prisma.Employee.findMany({
+    if (userRole === 'MANAGER' && req.user.employee) {
+      const subordinates = await prisma.employee.findMany({
         where: { managerId: req.user.employee.id },
         select: { id: true },
       });

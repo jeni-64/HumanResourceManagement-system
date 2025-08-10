@@ -80,7 +80,8 @@ const buildEmployeeFilters = (user, filters = {}) => {
   };
 
   // Apply role-based filtering for managers
-  if (user.role === 'MANAGER' && user.employee) {
+  const userRole = user.role.toUpperCase();
+  if (userRole === 'MANAGER' && user.employee) {
     where.AND.push({
       OR: [
         { managerId: user.employee.id }, // Subordinates
@@ -163,7 +164,8 @@ const getEmployee = async (id, user) => {
     let where = { id };
     
     // Apply role-based access control
-    if (user.role === 'MANAGER' && user.employee) {
+    const userRole = user.role.toUpperCase();
+    if (userRole === 'MANAGER' && user.employee) {
       const managerCheck = await prisma.employee.findFirst({
         where: {
           id,
@@ -177,7 +179,7 @@ const getEmployee = async (id, user) => {
       if (!managerCheck) {
         throw new NotFoundError('Employee not found or unauthorized');
       }
-    } else if (user.role === 'EMPLOYEE' && user.employee) {
+    } else if (userRole === 'EMPLOYEE' && user.employee) {
       // Employees can only view their own profile
       if (id !== user.employee.id) {
         throw new NotFoundError('Employee not found or unauthorized');
