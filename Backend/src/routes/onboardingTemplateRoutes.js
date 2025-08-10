@@ -1,108 +1,247 @@
 import express from 'express';
+import { z } from 'zod';
+import { authenticate, authorize } from '../middleware/auth.js';
+import { validate } from '../middleware/validation.js';
+import { createAuditLog } from '../middleware/auditMiddleware.js';
+import { AppError, ValidationError } from '../utils/errors.js';
+import prisma from '../config/prisma.js';
+
 const router = express.Router();
-const { z } = require('zod');
-const { authMiddleware, roleMiddleware } = require('../middleware/auth');
 
 // Validation schema
-const onboardingTemplateSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  isActive: z.boolean().optional(),
-});
-
-// Middleware for validation
-const validateOnboardingTemplate = (req, res, next) => {
-  try {
-    onboardingTemplateSchema.parse(req.body);
-    next();
-  } catch (error) {
-    res.status(400).json({ error: error.errors });
-  }
+const onboardingTemplateSchemas = {
+  create: z.object({
+    body: z.object({
+      name: z.string().min(1, 'Name is required'),
+      description: z.string().optional(),
+      isActive: z.boolean().optional().default(true),
+    }),
+  }),
+  update: z.object({
+    params: z.object({ id: z.string().uuid('Invalid template ID') }),
+    body: z.object({
+      name: z.string().min(1, 'Name is required').optional(),
+      description: z.string().optional(),
+      isActive: z.boolean().optional(),
+    }),
+  }),
+  getAll: z.object({
+    query: z.object({
+      page: z.string().regex(/^\d+$/).optional().default('1'),
+      limit: z.string().regex(/^\d+$/).optional().default('10'),
+      isActive: z.enum(['true', 'false']).optional(),
+    }),
+  }),
 };
 
-// GET /: List templates (paginated, filter by isActive)
+// GET / - List templates
 router.get(
   '/',
-  authMiddleware,
-  roleMiddleware(['ADMIN', 'HR']),
-  async (req, res) => {
-    const { page = 1, limit = 10, isActive } = req.query;
-    const filters = {};
-    if (isActive !== undefined) filters.isActive = isActive === 'true';
-
+  authenticate,
+  authorize('ADMIN', 'HR'),
+  validate(onboardingTemplateSchemas.getAll),
+  async (req, res, next) => {
     try {
-      const templates = [];
-      const total = 0;
-      res.json({ templates, total, page: Number(page), limit: Number(limit) });
+      const { page, limit, isActive } = req.validatedData.query;
+      const skip = (parseInt(page) - 1) * parseInt(limit);
+      
+      const where = {};
+      if (isActive !== undefined) where.isActive = isActive === 'true';
+
+      const [templates, total] = await Promise.all([
+        prisma.onboardingTemplate.findMany({
+          where,
+          skip,
+          take: parseInt(limit),
+          include: {
+            tasks: {
+              select: { id: true, title: true, status: true },
+              orderBy: { sortOrder: 'asc' },
+            },
+            _count: {
+              select: { tasks: true },
+            },
+          },
+          orderBy: { name: 'asc' },
+        }),
+        prisma.onboardingTemplate.count({ where }),
+      ]);
+
+      await createAuditLog(req.user.id, 'READ', 'onboarding_templates', null, null, null, req);
+
+      res.json({
+        success: true,
+        data: {
+          templates,
+          pagination: {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            total,
+            pages: Math.ceil(total / parseInt(limit)),
+          },
+        },
+      });
     } catch (error) {
-      res.status(500).json({ error: 'Server error' });
+      next(error);
     }
   }
 );
 
-// GET /:id: Get template details
+// GET /:id - Get template details
 router.get(
   '/:id',
-  authMiddleware,
-  roleMiddleware(['ADMIN', 'HR']),
-  async (req, res) => {
-    const { id } = req.params;
+  authenticate,
+  authorize('ADMIN', 'HR'),
+  async (req, res, next) => {
     try {
-      const template = { id, name: 'New Hire Template', isActive: true };
-      if (!template) return res.status(404).json({ error: 'Template not found' });
-      res.json(template);
+      const { id } = req.params;
+      
+      const template = await prisma.onboardingTemplate.findUnique({
+        where: { id },
+        include: {
+          tasks: {
+            orderBy: { sortOrder: 'asc' },
+            include: {
+              employee: {
+                select: { id: true, firstName: true, lastName: true, employeeId: true },
+              },
+              assignee: {
+                select: { id: true, firstName: true, lastName: true },
+              },
+            },
+          },
+        },
+      });
+
+      if (!template) throw new AppError('Onboarding template not found', 404);
+
+      await createAuditLog(req.user.id, 'READ', 'onboarding_templates', id, null, null, req);
+
+      res.json({ success: true, data: { template } });
     } catch (error) {
-      res.status(500).json({ error: 'Server error' });
+      next(error);
     }
   }
 );
 
-// POST /: Create template
+// POST / - Create template
 router.post(
   '/',
-  authMiddleware,
-  roleMiddleware(['ADMIN', 'HR']),
-  validateOnboardingTemplate,
-  async (req, res) => {
-    const { name } = req.body;
+  authenticate,
+  authorize('ADMIN', 'HR'),
+  validate(onboardingTemplateSchemas.create),
+  async (req, res, next) => {
     try {
-      const newTemplate = { id: 'uuid', name, isActive: true };
-      res.status(201).json(newTemplate);
+      const { name, description, isActive } = req.validatedData.body;
+
+      // Check if template name already exists
+      const existingTemplate = await prisma.onboardingTemplate.findFirst({
+        where: { name },
+      });
+      if (existingTemplate) {
+        throw new ValidationError('Onboarding template name already exists');
+      }
+
+      const template = await prisma.onboardingTemplate.create({
+        data: {
+          name,
+          description,
+          isActive,
+        },
+      });
+
+      await createAuditLog(req.user.id, 'CREATE', 'onboarding_templates', template.id, null, template, req);
+
+      res.status(201).json({
+        success: true,
+        message: 'Onboarding template created successfully',
+        data: { template },
+      });
     } catch (error) {
-      res.status(500).json({ error: 'Server error' });
+      next(error);
     }
   }
 );
 
-// PUT /:id: Update template
+// PUT /:id - Update template
 router.put(
   '/:id',
-  authMiddleware,
-  roleMiddleware(['ADMIN', 'HR']),
-  validateOnboardingTemplate,
-  async (req, res) => {
-    const { id } = req.params;
-    const { name } = req.body;
+  authenticate,
+  authorize('ADMIN', 'HR'),
+  validate(onboardingTemplateSchemas.update),
+  async (req, res, next) => {
     try {
-      const updatedTemplate = { id, name, isActive: true };
-      res.json(updatedTemplate);
+      const { id } = req.validatedData.params;
+      const updateData = req.validatedData.body;
+
+      const existingTemplate = await prisma.onboardingTemplate.findUnique({ where: { id } });
+      if (!existingTemplate) throw new AppError('Onboarding template not found', 404);
+
+      // Check name uniqueness if name is being updated
+      if (updateData.name && updateData.name !== existingTemplate.name) {
+        const nameConflict = await prisma.onboardingTemplate.findFirst({
+          where: { name: updateData.name },
+        });
+        if (nameConflict) throw new ValidationError('Onboarding template name already exists');
+      }
+
+      const template = await prisma.onboardingTemplate.update({
+        where: { id },
+        data: updateData,
+      });
+
+      await createAuditLog(req.user.id, 'UPDATE', 'onboarding_templates', id, existingTemplate, template, req);
+
+      res.json({
+        success: true,
+        message: 'Onboarding template updated successfully',
+        data: { template },
+      });
     } catch (error) {
-      res.status(500).json({ error: 'Server error' });
+      next(error);
     }
   }
 );
 
-// DELETE /:id: Soft delete template
+// DELETE /:id - Soft delete template
 router.delete(
   '/:id',
-  authMiddleware,
-  roleMiddleware(['ADMIN', 'HR']),
-  async (req, res) => {
-    const { id } = req.params;
+  authenticate,
+  authorize('ADMIN', 'HR'),
+  async (req, res, next) => {
     try {
-      const template = { id, isActive: false };
-      res.json(template);
+      const { id } = req.params;
+
+      const existingTemplate = await prisma.onboardingTemplate.findUnique({
+        where: { id },
+        include: {
+          tasks: {
+            where: { status: { in: ['PENDING', 'IN_PROGRESS'] } },
+          },
+        },
+      });
+
+      if (!existingTemplate) throw new AppError('Onboarding template not found', 404);
+
+      // Check if template has active tasks
+      if (existingTemplate.tasks.length > 0) {
+        throw new ValidationError('Cannot delete template with active tasks');
+      }
+
+      const template = await prisma.onboardingTemplate.update({
+        where: { id },
+        data: { isActive: false },
+      });
+
+      await createAuditLog(req.user.id, 'DELETE', 'onboarding_templates', id, existingTemplate, template, req);
+
+      res.json({
+        success: true,
+        message: 'Onboarding template deleted successfully',
+        data: { template },
+      });
     } catch (error) {
-      res.status(500).json({ error: 'Server error' });
+      next(error);
     }
   }
 );

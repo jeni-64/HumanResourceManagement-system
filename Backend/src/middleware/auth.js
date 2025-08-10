@@ -4,11 +4,9 @@ import { AuthenticationError, AuthorizationError, ValidationError } from '../uti
 import { verifyAccessToken } from '../utils/authUtils.js';
 import logger from '../utils/logger.js';
 
-const prisma = new PrismaClient({
-  errorFormat: 'pretty',
-});
+const prisma = new PrismaClient({ errorFormat: 'pretty' });
 
-// Get environment variable with logging
+// Helper for environment variables
 const getEnvVariable = (key, defaultValue) => {
   const value = process.env[key];
   if (!value) {
@@ -29,7 +27,8 @@ const authenticate = async (req, res, next) => {
     const token = authHeader.split(' ')[1];
     const decoded = verifyAccessToken(token);
 
-    const user = await prisma.user.findUnique({
+    // Make sure model casing matches your Prisma schema
+    const user = await prisma.User.findUnique({
       where: { id: decoded.userId },
       select: {
         id: true,
@@ -52,10 +51,10 @@ const authenticate = async (req, res, next) => {
     }
 
     req.user = { ...user, role: decoded.role };
-    req.logger.info('User authenticated', { userId: user.id, role: user.role, url: req.originalUrl });
+    logger.info('User authenticated', { userId: user.id, role: user.role, url: req.originalUrl });
     next();
   } catch (error) {
-    req.logger.error('Authentication error', { error: error.message, url: req.originalUrl });
+    logger.error('Authentication error', { error: error.message, url: req.originalUrl });
     next(error);
   }
 };
@@ -64,12 +63,12 @@ const authenticate = async (req, res, next) => {
 const authorize = (...roles) => {
   return (req, res, next) => {
     if (!req.user) {
-      req.logger.error('Authentication required', { url: req.originalUrl });
+      logger.error('Authentication required', { url: req.originalUrl });
       return next(new AuthenticationError('Authentication required', null, 'AUTH_REQUIRED'));
     }
 
     if (!roles.includes(req.user.role)) {
-      req.logger.error('Insufficient permissions', { userId: req.user.id, role: req.user.role, url: req.originalUrl });
+      logger.error('Insufficient permissions', { userId: req.user.id, role: req.user.role, url: req.originalUrl });
       return next(new AuthorizationError('Insufficient permissions', null, 'INSUFFICIENT_PERMISSIONS'));
     }
 
@@ -81,7 +80,10 @@ const authorize = (...roles) => {
 const authorizeEmployee = async (req, res, next) => {
   try {
     const employeeId = req.params.employeeId || req.params.id;
-    if (!employeeId || !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(employeeId)) {
+    if (
+      !employeeId ||
+      !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(employeeId)
+    ) {
       throw new ValidationError('Invalid employee ID', null, 'INVALID_ID');
     }
 
@@ -94,7 +96,7 @@ const authorizeEmployee = async (req, res, next) => {
     }
 
     if (req.user.role === 'MANAGER' && req.user.employee) {
-      const subordinates = await prisma.employee.findMany({
+      const subordinates = await prisma.Employee.findMany({
         where: { managerId: req.user.employee.id },
         select: { id: true },
       });
@@ -108,13 +110,17 @@ const authorizeEmployee = async (req, res, next) => {
       return next();
     }
 
-    req.logger.error('Employee access denied', { userId: req.user.id, role: req.user.role, employeeId, url: req.originalUrl });
+    logger.error('Employee access denied', {
+      userId: req.user.id,
+      role: req.user.role,
+      employeeId,
+      url: req.originalUrl,
+    });
     return next(new AuthorizationError('Access denied', null, 'ACCESS_DENIED'));
   } catch (error) {
-    req.logger.error('Employee authorization error', { error: error.message, url: req.originalUrl });
+    logger.error('Employee authorization error', { error: error.message, url: req.originalUrl });
     next(error);
   }
 };
 
-// Export for ES Modules
 export { authenticate, authorize, authorizeEmployee };

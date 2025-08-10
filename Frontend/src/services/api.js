@@ -140,7 +140,17 @@ export const leaveAPI = {
   getById: (id) => get(`/leave/${id}`),
   create: (data) => post('/leave', data),
   update: (id, data) => put(`/leave/${id}`, data),
-  delete: (id) => del(`/leave/${id}`)
+  delete: (id) => del(`/leave/${id}`),
+  // Leave policies
+  getPolicies: (params) => get('/leave-policies', { params }),
+  createPolicy: (data) => post('/leave-policies', data),
+  updatePolicy: (id, data) => put(`/leave-policies/${id}`, data),
+  deletePolicy: (id) => del(`/leave-policies/${id}`),
+  // Leave balances
+  getBalances: (params) => get('/leave-balances', { params }),
+  createBalance: (data) => post('/leave-balances', data),
+  updateBalance: (id, data) => put(`/leave-balances/${id}`, data),
+  deleteBalance: (id) => del(`/leave-balances/${id}`)
 };
 
 // Payroll API
@@ -152,12 +162,58 @@ export const payrollAPI = {
   delete: (id) => del(`/payroll/${id}`)
 };
 
+// Job Posting API
+export const jobPostingAPI = {
+  getAll: (params) => get('/job-postings', { params }),
+  getById: (id) => get(`/job-postings/${id}`),
+  create: (data) => post('/job-postings', data),
+  update: (id, data) => put(`/job-postings/${id}`, data),
+  delete: (id) => del(`/job-postings/${id}`)
+};
+
+// Job Application API
+export const jobApplicationAPI = {
+  getAll: (params) => get('/job-applications', { params }),
+  getById: (id) => get(`/job-applications/${id}`),
+  create: (data) => post('/job-applications', data),
+  update: (id, data) => put(`/job-applications/${id}`, data),
+  delete: (id) => del(`/job-applications/${id}`)
+};
+
+// Interview API
+export const interviewAPI = {
+  getAll: (params) => get('/interviews', { params }),
+  getById: (id) => get(`/interviews/${id}`),
+  create: (data) => post('/interviews', data),
+  update: (id, data) => put(`/interviews/${id}`, data),
+  delete: (id) => del(`/interviews/${id}`)
+};
+
+// Performance Review API
+export const performanceAPI = {
+  getAll: (params) => get('/performance-reviews', { params }),
+  getById: (id) => get(`/performance-reviews/${id}`),
+  create: (data) => post('/performance-reviews', data),
+  update: (id, data) => put(`/performance-reviews/${id}`, data),
+  delete: (id) => del(`/performance-reviews/${id}`)
+};
+
+// Position API
+export const positionAPI = {
+  getAll: (params) => get('/positions', { params }),
+  getById: (id) => get(`/positions/${id}`),
+  create: (data) => post('/positions', data),
+  update: (id, data) => put(`/positions/${id}`, data),
+  delete: (id) => del(`/positions/${id}`)
+};
+
 // Reports API
 export const reportsAPI = {
   getEmployeeStats: (params) => get('/reports/employees/stats', { params }),
   getAttendanceReport: (params) => get('/reports/attendance', { params }),
   getLeaveReport: (params) => get('/reports/leave', { params }),
-  getPayrollReport: (params) => get('/reports/payroll', { params })
+  getPayrollReport: (params) => get('/reports/payroll', { params }),
+  getAuditReport: (params) => get('/reports/audit', { params })
 };
 
 // User API
@@ -167,7 +223,8 @@ export const userAPI = {
   create: (data) => post('/users', data),
   update: (id, data) => put(`/users/${id}`, data),
   delete: (id) => del(`/users/${id}`),
-  changePassword: (data) => patch('/users/change-password', data)
+  changePassword: (data) => patch('/users/change-password', data),
+  getActivity: (id, params) => get(`/users/${id}/activity`, { params })
 };
 
 // ======================= DEFAULT EXPORT =======================

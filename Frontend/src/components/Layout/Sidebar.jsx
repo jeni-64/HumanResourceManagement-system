@@ -52,12 +52,19 @@ const Sidebar = ({ open, setOpen }) => {
   }
 
   const SidebarContent = () => (
-    <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-white px-4 pb-4">
+    <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-white px-6 pb-4">
       <div className="flex h-16 shrink-0 items-center justify-between">
-        {!collapsed && <h1 className="text-2xl font-bold text-gray-900">HRMS</h1>}
+        {!collapsed && (
+          <div className="flex items-center">
+            <div className="h-8 w-8 bg-indigo-600 rounded-lg flex items-center justify-center mr-3">
+              <UsersIcon className="h-5 w-5 text-white" />
+            </div>
+            <h1 className="text-xl font-bold text-gray-900">HRMS Pro</h1>
+          </div>
+        )}
         <button 
           onClick={() => setCollapsed(!collapsed)}
-          className="p-1 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-700"
+          className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors"
         >
           {collapsed ? (
             <ChevronDoubleRightIcon className="h-5 w-5" />
@@ -69,23 +76,23 @@ const Sidebar = ({ open, setOpen }) => {
       <nav className="flex flex-1 flex-col">
         <ul role="list" className="flex flex-1 flex-col gap-y-2">
           <li>
-            <ul role="list" className="-mx-2 space-y-1">
+            <ul role="list" className="space-y-1">
               {filteredNavigation.map((item) => (
                 <li key={item.name}>
                   <Link
                     to={item.href}
                     className={cn(
                       location.pathname === item.href
-                        ? 'bg-gray-50 text-primary-600'
-                        : 'text-gray-700 hover:text-primary-600 hover:bg-gray-50',
-                      'group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-medium',
+                        ? 'bg-indigo-50 text-indigo-600 border-r-2 border-indigo-600'
+                        : 'text-gray-700 hover:text-indigo-600 hover:bg-gray-50',
+                      'group flex gap-x-3 rounded-l-md p-3 text-sm leading-6 font-medium transition-all duration-200',
                       collapsed ? 'justify-center' : ''
                     )}
                     title={collapsed ? item.name : ''}
                   >
                     <item.icon
                       className={cn(
-                        location.pathname === item.href ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600',
+                        location.pathname === item.href ? 'text-indigo-600' : 'text-gray-400 group-hover:text-indigo-600',
                         'h-5 w-5 shrink-0'
                       )}
                       aria-hidden="true"
@@ -99,16 +106,17 @@ const Sidebar = ({ open, setOpen }) => {
             </ul>
           </li>
           <li className="mt-auto">
+            <div className="border-t border-gray-200 pt-6">
             <Link
               to="/profile"
               className={cn(
-                'group -mx-2 flex gap-x-3 rounded-md p-2 text-sm font-medium leading-6 text-gray-700 hover:bg-gray-50 hover:text-primary-600',
+                'group flex gap-x-3 rounded-md p-3 text-sm font-medium leading-6 text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-colors',
                 collapsed ? 'justify-center' : ''
               )}
               title={collapsed ? 'Profile' : ''}
             >
               <UserIcon
-                className="h-5 w-5 shrink-0 text-gray-400 group-hover:text-primary-600"
+                className="h-6 w-6 shrink-0 text-gray-400 group-hover:text-indigo-600"
                 aria-hidden="true"
               />
               {!collapsed && <span>Profile</span>}
@@ -116,17 +124,18 @@ const Sidebar = ({ open, setOpen }) => {
             <button
               onClick={handleLogout}
               className={cn(
-                'group -mx-2 flex gap-x-3 rounded-md p-2 text-sm font-medium leading-6 text-gray-700 hover:bg-gray-50 hover:text-red-600 w-full',
+                'group flex gap-x-3 rounded-md p-3 text-sm font-medium leading-6 text-gray-700 hover:bg-red-50 hover:text-red-600 w-full transition-colors mt-1',
                 collapsed ? 'justify-center' : ''
               )}
               title={collapsed ? 'Sign Out' : ''}
             >
               <ArrowRightOnRectangleIcon
-                className="h-5 w-5 shrink-0 text-gray-400 group-hover:text-red-600"
+                className="h-6 w-6 shrink-0 text-gray-400 group-hover:text-red-600"
                 aria-hidden="true"
               />
               {!collapsed && <span>Sign Out</span>}
             </button>
+            </div>
           </li>
         </ul>
       </nav>
@@ -188,9 +197,9 @@ const Sidebar = ({ open, setOpen }) => {
       <div className={cn(
         "hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:flex-col",
         "transition-all duration-300 ease-in-out",
-        collapsed ? "lg:w-20" : "lg:w-64"
+        collapsed ? "lg:w-20" : "lg:w-72"
       )}>
-        <div className="flex grow flex-col gap-y-5 overflow-y-auto border-r border-gray-200 bg-white">
+        <div className="flex grow flex-col gap-y-5 overflow-y-auto border-r border-gray-200 bg-white shadow-sm">
           <SidebarContent />
         </div>
       </div>

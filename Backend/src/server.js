@@ -3,12 +3,12 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import slowDown from 'express-slow-down';
-import { config } from 'dotenv';
+import dotenv from 'dotenv';
 import prisma from './config/prisma.js'; // ✅ centralized Prisma
 import logger, { requestLogger } from './utils/logger.js';
 import errorHandler from './middleware/errorHandler.js';
 import { auditMiddleware } from './middleware/auditMiddleware.js';
-import { authenticate } from './middleware/auth.js';
+import { debugRoutes, logRegisteredRoutes } from './middleware/debugRoutes.js';
 
 // Import route files
 import authRoutes from './routes/authRoutes.js';
@@ -22,9 +22,22 @@ import payrollRoutes from './routes/payrollRecordRoutes.js';
 import documentRoutes from './routes/documentRoutes.js';
 import auditLogRoutes from './routes/auditLogRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
+import leavePolicyRoutes from './routes/leavePolicyRoutes.js';
+import leaveBalanceRoutes from './routes/leaveBalanceRoutes.js';
+import jobPostingRoutes from './routes/jobPostingRoutes.js';
+import jobApplicationRoutes from './routes/jobApplicationRoutes.js';
+import interviewRoutes from './routes/interviewRoutes.js';
+import performanceReviewRoutes from './routes/performanceReviewRoutes.js';
+import onboardingTemplateRoutes from './routes/onboardingTemplateRoutes.js';
+import onboardingTaskRoutes from './routes/onboardingTaskRoutes.js';
+import offboardingTaskRoutes from './routes/offboardingTaskRoutes.js';
+import trainingProgramRoutes from './routes/trainingProgramRoutes.js';
+import trainingRecordRoutes from './routes/trainingRecordRoutes.js';
+import disciplinaryActionRoutes from './routes/disciplinaryActionRoutes.js';
+import settingRoutes from './routes/settingRoutes.js';
 
 // Load environment variables
-config();
+dotenv.config();
 
 // Helper to fetch environment variables
 const getEnvVariable = (key, defaultValue) => {
@@ -97,18 +110,32 @@ app.use(express.json({ limit: getEnvVariable('BODY_LIMIT', '10mb') }));
 app.use(express.urlencoded({ extended: true, limit: getEnvVariable('BODY_LIMIT', '10mb') }));
 app.use(requestLogger);
 app.use(auditMiddleware);
+app.use(debugRoutes);
 
 // === API Routes ===
-app.use('/api/auth', authRoutes);authenticate, employeeRoutes; // Use authenticate in route if needed
-app.use('/api/departments', authenticate, departmentRoutes);
-app.use('/api/attendance', authenticate, attendanceRoutes);
-app.use('/api/leave', authenticate, leaveRoutes);
-app.use('/api/users', authenticate, userRoutes);
-app.use('/api/positions', authenticate, positionRoutes);
-app.use('/api/payroll', authenticate, payrollRoutes);
-app.use('/api/documents', authenticate, documentRoutes);
-app.use('/api/audit-logs', authenticate, auditLogRoutes);
-app.use('/api/reports', authenticate, reportRoutes);
+app.use('/api/employees', employeeRoutes);
+app.use('/api/departments', departmentRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/leave', leaveRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/positions', positionRoutes);
+app.use('/api/payroll', payrollRoutes);
+app.use('/api/documents', documentRoutes);
+app.use('/api/audit-logs', auditLogRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/leave-policies', leavePolicyRoutes);
+app.use('/api/leave-balances', leaveBalanceRoutes);
+app.use('/api/job-postings', jobPostingRoutes);
+app.use('/api/job-applications', jobApplicationRoutes);
+app.use('/api/interviews', interviewRoutes);
+app.use('/api/performance-reviews', performanceReviewRoutes);
+app.use('/api/onboarding-templates', onboardingTemplateRoutes);
+app.use('/api/onboarding-tasks', onboardingTaskRoutes);
+app.use('/api/offboarding-tasks', offboardingTaskRoutes);
+app.use('/api/training-programs', trainingProgramRoutes);
+app.use('/api/training-records', trainingRecordRoutes);
+app.use('/api/disciplinary-actions', disciplinaryActionRoutes);
+app.use('/api/settings', settingRoutes);
 
 // === Health Check ===
 app.get('/api/health', async (req, res) => {
@@ -179,6 +206,7 @@ const server = app.listen(PORT, () => {
   logger.info(`🚀 Backend running on port ${PORT}`);
   logger.info(`📊 Health check: http://localhost:${PORT}/api/health`);
   logger.info(`Frontend URL allowed: ${ALLOWED_FRONTEND}`);
+  logRegisteredRoutes(app);
 });
 
 export { app, server };
