@@ -1,4 +1,4 @@
-// src/routes/employeeRoutes.js
+// src/routes/employeeRoutes.js - Complete fixed version
 import express from 'express';
 import { z } from 'zod';
 import { authenticate, authorize, authorizeEmployee } from '../middleware/auth.js';
@@ -10,7 +10,38 @@ import logger from '../utils/logger.js';
 
 const router = express.Router();
 
-// Validation schemas
+// Helper function to safely convert string to number
+const safeParseInt = (value, defaultValue, min = 1, max = 1000) => {
+  if (!value || value === '') return defaultValue;
+  const parsed = parseInt(value, 10);
+  if (isNaN(parsed)) return defaultValue;
+  return Math.max(min, Math.min(max, parsed));
+};
+
+// Helper function to validate UUID
+const isValidUUID = (uuid) => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return typeof uuid === 'string' && uuid.trim() !== '' && uuidRegex.test(uuid);
+};
+
+// Helper function to check if string is empty or just whitespace
+const isEmpty = (str) => {
+  return !str || typeof str !== 'string' || str.trim() === '';
+};
+
+// Simplified validation schema - let the route handle parameter processing
+const listSchema = z.object({
+  query: z.object({
+    page: z.union([z.string(), z.undefined()]).optional(),
+    limit: z.union([z.string(), z.undefined()]).optional(),
+    search: z.union([z.string(), z.undefined()]).optional(),
+    departmentId: z.union([z.string(), z.undefined()]).optional(),
+    employmentStatus: z.union([z.string(), z.undefined()]).optional(),
+    employmentType: z.union([z.string(), z.undefined()]).optional(),
+  }),
+});
+
+// Validation schemas for other operations
 const employeeSchema = z.object({
   body: z.object({
     employeeId: z.string().min(1, 'Employee ID is required'),
@@ -63,37 +94,96 @@ const updateEmployeeSchema = z.object({
   }),
 });
 
-const listSchema = z.object({
-  query: z.object({
-    page: z.string().optional().transform((val) => (val ? Math.max(1, parseInt(val)) : 1)),
-    limit: z.string().optional().transform((val) => (val ? Math.min(parseInt(val), 100) : 10)),
-    search: z.string().optional(),
-    departmentId: z.string().uuid('Invalid department ID').optional(),
-    employmentStatus: z.enum(['ACTIVE', 'INACTIVE', 'TERMINATED', 'ON_LEAVE', 'PROBATION']).optional(),
-    employmentType: z.enum(['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERN', 'CONSULTANT']).optional(),
-  }),
-});
-
 const idSchema = z.object({
   params: z.object({
     id: z.string().uuid('Invalid employee ID'),
   }),
 });
 
-// GET /api/employees - Get all employees with pagination
+/**
+ * GET /api/employees - Get all employees with pagination
+ * 
+ * Returns a paginated list of employees with optional filtering.
+ * Accessible to ADMIN, HR, and MANAGER roles.
+ * Managers can only see their own subordinates and themselves.
+ */
 router.get(
   '/',
   authenticate,
   authorize('ADMIN', 'HR', 'MANAGER'),
-  validate(listSchema),
+  // Remove validation middleware and handle manually
   async (req, res, next) => {
     try {
-      const { page, limit, search, departmentId, employmentStatus, employmentType } = req.validatedData.query;
+      // Manual parameter processing with proper error handling
+      const rawQuery = req.query || {};
       
+      // Process pagination parameters
+      const page = safeParseInt(rawQuery.page, 1, 1, 1000);
+      const limit = safeParseInt(rawQuery.limit, 10, 1, 100);
+      
+      // Process search parameter
+      const search = isEmpty(rawQuery.search) ? null : rawQuery.search.trim();
+      
+      // Process departmentId with UUID validation
+      let departmentId = null;
+      if (!isEmpty(rawQuery.departmentId)) {
+        const deptId = rawQuery.departmentId.trim();
+        if (!isValidUUID(deptId)) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'Invalid department ID format',
+            code: 'INVALID_DEPARTMENT_ID'
+          });
+        }
+        departmentId = deptId;
+      }
+      
+      // Process employment status with validation
+      const validStatuses = ['ACTIVE', 'INACTIVE', 'TERMINATED', 'ON_LEAVE', 'PROBATION'];
+      let employmentStatus = null;
+      if (!isEmpty(rawQuery.employmentStatus)) {
+        const status = rawQuery.employmentStatus.trim().toUpperCase();
+        if (!validStatuses.includes(status)) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'Invalid employment status',
+            code: 'INVALID_EMPLOYMENT_STATUS',
+            validValues: validStatuses
+          });
+        }
+        employmentStatus = status;
+      }
+      
+      // Process employment type with validation
+      const validTypes = ['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERN', 'CONSULTANT'];
+      let employmentType = null;
+      if (!isEmpty(rawQuery.employmentType)) {
+        const type = rawQuery.employmentType.trim().toUpperCase();
+        if (!validTypes.includes(type)) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'Invalid employment type',
+            code: 'INVALID_EMPLOYMENT_TYPE',
+            validValues: validTypes
+          });
+        }
+        employmentType = type;
+      }
+      
+      // Build filters object - only include non-null values
       const filters = {};
-      if (departmentId) filters.departmentId = departmentId;
-      if (employmentStatus) filters.employmentStatus = employmentStatus;
-      if (employmentType) filters.employmentType = employmentType;
+      
+      if (departmentId) {
+        filters.departmentId = departmentId;
+      }
+      
+      if (employmentStatus) {
+        filters.employmentStatus = employmentStatus;
+      }
+      
+      if (employmentType) {
+        filters.employmentType = employmentType;
+      }
       
       // Add search functionality
       if (search) {
@@ -106,43 +196,79 @@ router.get(
       }
 
       // Role-based filtering for managers
-      const userRole = req.user.role.toUpperCase();
-      if (userRole === 'MANAGER' && req.user.employee) {
-        const subordinates = await prisma.employee.findMany({
-          where: { managerId: req.user.employee.id },
-          select: { id: true },
-        });
-        const subordinateIds = subordinates.map(sub => sub.id);
-        subordinateIds.push(req.user.employee.id); // Include self
-        
-        filters.id = { in: subordinateIds };
+      if (req.user && req.user.role) {
+        const userRole = req.user.role.toUpperCase();
+        if (userRole === 'MANAGER' && req.user.employee) {
+          try {
+            const subordinates = await prisma.employee.findMany({
+              where: { managerId: req.user.employee.id },
+              select: { id: true },
+            });
+            const subordinateIds = subordinates.map(sub => sub.id);
+            subordinateIds.push(req.user.employee.id); // Include self
+            
+            filters.id = { in: subordinateIds };
+          } catch (managerError) {
+            logger.error('Error fetching manager subordinates', { 
+              error: managerError.message,
+              userId: req.user.id,
+              managerId: req.user.employee?.id
+            });
+            // Continue without manager filtering in case of error
+          }
+        }
       }
 
-      const [employees, total] = await Promise.all([
-        prisma.employee.findMany({
-          where: filters,
-          skip: (page - 1) * limit,
-          take: limit,
-          orderBy: { firstName: 'asc' },
-          include: {
-            department: {
-              select: { id: true, name: true },
-            },
-            position: {
-              select: { id: true, title: true, level: true },
-            },
-            manager: {
-              select: { id: true, firstName: true, lastName: true },
-            },
-            user: {
-              select: { id: true, email: true, role: true, isActive: true },
-            },
-          },
-        }),
-        prisma.employee.count({ where: filters }),
-      ]);
+      // Execute database queries with error handling
+      let employees = [];
+      let total = 0;
 
-      await createAuditLog(req.user.id, 'READ', 'employees', null, null, null, req);
+      try {
+        [employees, total] = await Promise.all([
+          prisma.employee.findMany({
+            where: filters,
+            skip: (page - 1) * limit,
+            take: limit,
+            orderBy: { firstName: 'asc' },
+            include: {
+              department: {
+                select: { id: true, name: true },
+              },
+              position: {
+                select: { id: true, title: true, level: true },
+              },
+              manager: {
+                select: { id: true, firstName: true, lastName: true },
+              },
+              user: {
+                select: { id: true, email: true, role: true, isActive: true },
+              },
+            },
+          }),
+          prisma.employee.count({ where: filters }),
+        ]);
+      } catch (dbError) {
+        logger.error('Database error in employee query', {
+          error: dbError.message,
+          stack: dbError.stack,
+          filters,
+          userId: req.user?.id
+        });
+        throw new AppError('Database query failed', 500, null, 'DATABASE_ERROR');
+      }
+
+      // Log audit trail
+      try {
+        if (req.user?.id) {
+          await createAuditLog(req.user.id, 'READ', 'employees', null, null, null, req);
+        }
+      } catch (auditError) {
+        // Don't fail the request if audit logging fails
+        logger.warn('Audit log creation failed', { 
+          error: auditError.message,
+          userId: req.user?.id 
+        });
+      }
       
       res.json({
         status: 'success',
@@ -160,14 +286,32 @@ router.get(
       logger.error('Error fetching employees', { 
         error: error.message, 
         stack: error.stack,
-        userId: req.user?.id 
+        userId: req.user?.id,
+        query: req.query,
+        url: req.url
       });
-      next(new AppError('Failed to fetch employees', 500, null, 'SERVER_ERROR'));
+      
+      // Return appropriate error response
+      if (error instanceof AppError) {
+        next(error);
+      } else {
+        next(new AppError('Failed to fetch employees', 500, null, 'SERVER_ERROR'));
+      }
     }
   }
 );
 
-// GET /api/employees/:id - Get single employee
+/**
+ * GET /api/employees/:id - Get single employee
+ * 
+ * Returns detailed information about a specific employee including:
+ * - Basic info
+ * - Department and position
+ * - Manager and subordinates
+ * - Recent attendance and leave records
+ * 
+ * Accessible to ADMIN, HR, MANAGER, and the employee themselves.
+ */
 router.get(
   '/:id',
   authenticate,
@@ -227,7 +371,15 @@ router.get(
   }
 );
 
-// POST /api/employees - Create employee
+/**
+ * POST /api/employees - Create a new employee
+ * 
+ * Creates a new employee record with validation for:
+ * - Unique employee ID and email
+ * - Valid department, position, and manager references
+ * 
+ * Accessible only to ADMIN and HR roles.
+ */
 router.post(
   '/',
   authenticate,
@@ -311,7 +463,16 @@ router.post(
   }
 );
 
-// PUT /api/employees/:id - Update employee
+/**
+ * PUT /api/employees/:id - Update employee
+ * 
+ * Updates an existing employee record with validation for:
+ * - Unique email
+ * - Valid department, position, and manager references
+ * - Prevents self-management
+ * 
+ * Accessible only to ADMIN and HR roles.
+ */
 router.put(
   '/:id',
   authenticate,
@@ -405,7 +566,14 @@ router.put(
   }
 );
 
-// DELETE /api/employees/:id - Soft delete employee (set employment status to TERMINATED)
+/**
+ * DELETE /api/employees/:id - Soft delete employee
+ * 
+ * Sets employment status to TERMINATED and deactivates associated user account.
+ * Prevents termination if employee has active subordinates.
+ * 
+ * Accessible only to ADMIN and HR roles.
+ */
 router.delete(
   '/:id',
   authenticate,

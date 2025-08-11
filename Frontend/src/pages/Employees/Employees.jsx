@@ -32,24 +32,51 @@ const Employees = () => {
     setPage(1);
   }, [debouncedSearch, filters]);
 
-  // Fetch employees data
-  const { data, isLoading, error } = useQuery(
-    ['employees', page, debouncedSearch, filters],
-    () => employeeAPI.getAll({
+  // Build query parameters, excluding empty values
+  const buildQueryParams = useCallback(() => {
+    const params = {
       page,
-      limit: 10,
-      search: debouncedSearch,
-      ...filters
-    }),
+      limit: 10
+    };
+
+    // Only add non-empty search
+    if (debouncedSearch.trim()) {
+      params.search = debouncedSearch.trim();
+    }
+
+    // Only add non-empty filters
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value && value.trim()) {
+        params[key] = value;
+      }
+    });
+
+    return params;
+  }, [page, debouncedSearch, filters]);
+
+  // Fetch employees data
+  const { data, isLoading, error, refetch } = useQuery(
+    ['employees', page, debouncedSearch, filters],
+    () => employeeAPI.getAll(buildQueryParams()),
     {
       keepPreviousData: true,
       staleTime: 5 * 60 * 1000, // 5 minutes
+      retry: (failureCount, error) => {
+        // Don't retry on 4xx errors, but retry on 5xx errors up to 3 times
+        if (error?.response?.status >= 400 && error?.response?.status < 500) {
+          return false;
+        }
+        return failureCount < 3;
+      },
+      onError: (error) => {
+        console.error('Failed to fetch employees:', error);
+      }
     }
   );
 
-  // Memoized data extraction
+  // Memoized data extraction with null safety
   const employees = data?.data?.employees || [];
-  const pagination = data?.data?.pagination;
+  const pagination = data?.data?.pagination || null;
 
   // Event handlers using useCallback for optimization
   const handleSearchChange = useCallback((e) => {
@@ -76,8 +103,14 @@ const Employees = () => {
     setShowFilters(prev => !prev);
   }, []);
 
+  const handleRetry = useCallback(() => {
+    refetch();
+  }, [refetch]);
+
   // Badge rendering functions
   const getStatusBadge = useCallback((status) => {
+    if (!status) return <Badge variant="default">Unknown</Badge>;
+    
     const variants = {
       ACTIVE: 'success',
       INACTIVE: 'warning',
@@ -93,6 +126,8 @@ const Employees = () => {
   }, []);
 
   const getEmploymentTypeBadge = useCallback((type) => {
+    if (!type) return <Badge variant="default">Unknown</Badge>;
+    
     const variants = {
       FULL_TIME: 'primary',
       PART_TIME: 'info',
@@ -108,13 +143,26 @@ const Employees = () => {
   }, []);
 
   // Render employee avatar
-  const renderEmployeeAvatar = useCallback((employee) => (
-    <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
-      <span className="text-sm font-medium text-indigo-800">
-        {employee.firstName[0]}{employee.lastName[0]}
-      </span>
-    </div>
-  ), []);
+  const renderEmployeeAvatar = useCallback((employee) => {
+    const initials = `${employee.firstName?.[0] || ''}${employee.lastName?.[0] || ''}`.toUpperCase();
+    
+    return (
+      <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
+        <span className="text-sm font-medium text-indigo-800">
+          {initials || '??'}
+        </span>
+      </div>
+    );
+  }, []);
+
+  // Format date safely
+  const formatDate = useCallback((dateString) => {
+    try {
+      return format(new Date(dateString), 'MMM dd, yyyy');
+    } catch (error) {
+      return 'Invalid Date';
+    }
+  }, []);
 
   // Render filter controls
   const renderFilters = () => (
@@ -272,7 +320,7 @@ const Employees = () => {
                       <div className="text-sm font-medium text-gray-900">
                         {employee.firstName} {employee.lastName}
                       </div>
-                      <div className="text-sm text-gray-500">{employee.email}</div>
+                      <div className="text-sm text-gray-500">{employee.email || 'No email'}</div>
                     </div>
                   </div>
                 </Table.Cell>
@@ -294,7 +342,7 @@ const Employees = () => {
                 </Table.Cell>
                 <Table.Cell className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm text-gray-900">
-                    {format(new Date(employee.hireDate), 'MMM dd, yyyy')}
+                    {employee.hireDate ? formatDate(employee.hireDate) : 'N/A'}
                   </div>
                 </Table.Cell>
                 <Table.Cell className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -325,7 +373,7 @@ const Employees = () => {
         title="No employees found"
         description="Try adjusting your search or filter criteria"
         action={
-          hasPermission(['ADMIN', 'HR']) && (
+          hasPermission && hasPermission(['ADMIN', 'HR']) && (
             <Link
               to="/employees/create"
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
@@ -352,12 +400,20 @@ const Employees = () => {
   if (error) {
     return (
       <div className="text-center py-12">
-        <p className="text-red-600">Error loading employees: {error.message}</p>
+        <div className="mx-auto h-12 w-12 text-red-400 mb-4">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <h3 className="text-lg font-medium text-gray-900 mb-2">Failed to load employees</h3>
+        <p className="text-sm text-gray-600 mb-4">
+          {error?.response?.data?.message || error?.message || 'An unexpected error occurred'}
+        </p>
         <button 
-          onClick={() => window.location.reload()} 
-          className="mt-4 btn-primary"
+          onClick={handleRetry} 
+          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
         >
-          Retry
+          Try Again
         </button>
       </div>
     );
@@ -373,7 +429,7 @@ const Employees = () => {
             {pagination?.total || 0} employees in your organization
           </p>
         </div>
-        {hasPermission(['ADMIN', 'HR']) && (
+        {hasPermission && hasPermission(['ADMIN', 'HR']) && (
           <Link 
             to="/employees/create" 
             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-200 hover:shadow-md"
